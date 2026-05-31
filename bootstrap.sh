@@ -60,7 +60,9 @@ add_line "export EDITOR=${DEFAULT_EDITOR}"
 add_line "export VISUAL=${DEFAULT_EDITOR}"
 add_line "alias ll='ls -alh --color=auto'"
 add_line "alias cat='bat --paging=never'"
-add_line "alias claude-yolo='claude --dangerously-skip-permissions'"
+# IS_SANDBOX=1 lets --dangerously-skip-permissions run as root (this is a
+# disposable WSL sandbox); without it Claude Code refuses for security reasons.
+add_line "alias claude-yolo='IS_SANDBOX=1 claude --dangerously-skip-permissions'"
 # fzf keybindings if present
 add_line '[ -f /usr/share/fzf/key-bindings.bash ] && source /usr/share/fzf/key-bindings.bash'
 add_line '[ -f /usr/share/fzf/completion.bash ] && source /usr/share/fzf/completion.bash'
