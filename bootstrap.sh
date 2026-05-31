@@ -6,9 +6,16 @@
 # Safe to re-run: every step is idempotent (--needed / existence checks).
 #
 # Usage:
-#   bash bootstrap.sh              # full setup
+#   bash bootstrap.sh                     # full setup
 #   EDITOR_PKG=neovim bash bootstrap.sh   # override default editor
 #   SKIP_CLAUDE=1 bash bootstrap.sh       # skip Claude Code install
+#   INSTALL_RUST=0 bash bootstrap.sh      # skip the large rust toolchain (~300MB)
+#   INSTALL_EXTRAS=0 bash bootstrap.sh    # core only, no convenience tools
+#
+# Note: the AUR is intentionally NOT used. makepkg refuses to run as root and
+# this box stays root-only (no build user), so AUR-only packages (PowerShell,
+# ruby-install, ...) are out of scope by design. Everything here is in the
+# official repos.
 #
 set -euo pipefail
 
@@ -18,6 +25,8 @@ GIT_EMAIL="${GIT_EMAIL:-Carl.Joakim.Damsleth@crayon.no}"
 EDITOR_PKG="${EDITOR_PKG:-vim}"          # vim by default; set to neovim/nano/etc
 DEFAULT_EDITOR="${DEFAULT_EDITOR:-vim}"  # what $EDITOR points to
 SKIP_CLAUDE="${SKIP_CLAUDE:-0}"
+INSTALL_EXTRAS="${INSTALL_EXTRAS:-1}"    # starship/eza/zoxide/tmux/btop/...
+INSTALL_RUST="${INSTALL_RUST:-1}"        # rust toolchain is ~300MB; set 0 to skip
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
@@ -50,22 +59,78 @@ $SUDO pacman -S --needed --noconfirm \
   openssh man-db which \
   "$EDITOR_PKG"
 
+# ── 2b. developer conveniences (official repos only — no AUR) ────────────────
+if [[ "$INSTALL_EXTRAS" == "1" ]]; then
+  log "Installing developer conveniences..."
+  # starship  prompt        eza   modern ls     zoxide  smart cd
+  # tmux      multiplexer   btop  resource mon   nmap    network scan
+  # msedit    Microsoft Edit (provides `edit`)   openbsd-netcat  nc provider
+  # github-cli gh           ruby  official ruby + gem
+  EXTRAS=(starship eza zoxide tmux btop nmap msedit openbsd-netcat github-cli ruby)
+  if [[ "$INSTALL_RUST" == "1" ]]; then
+    EXTRAS+=(rust)   # full toolchain, ~300MB — set INSTALL_RUST=0 to skip
+  fi
+  $SUDO pacman -S --needed --noconfirm "${EXTRAS[@]}"
+fi
+
 # ── 3. shell quality-of-life ─────────────────────────────────────────────────
 log "Configuring shell defaults..."
 PROFILE="$HOME/.bashrc"
 touch "$PROFILE"
-add_line() { grep -qxF "$1" "$PROFILE" || echo "$1" >> "$PROFILE"; }
+# Back up the original .bashrc once, before we ever touch it.
+[[ -f "$PROFILE" && ! -f "$PROFILE.orig" ]] && cp "$PROFILE" "$PROFILE.orig"
 
-add_line "export EDITOR=${DEFAULT_EDITOR}"
-add_line "export VISUAL=${DEFAULT_EDITOR}"
-add_line "alias ll='ls -alh --color=auto'"
-add_line "alias cat='bat --paging=never'"
-# IS_SANDBOX=1 lets --dangerously-skip-permissions run as root (this is a
-# disposable WSL sandbox); without it Claude Code refuses for security reasons.
-add_line "alias claude-yolo='IS_SANDBOX=1 claude --dangerously-skip-permissions'"
-# fzf keybindings if present
-add_line '[ -f /usr/share/fzf/key-bindings.bash ] && source /usr/share/fzf/key-bindings.bash'
-add_line '[ -f /usr/share/fzf/completion.bash ] && source /usr/share/fzf/completion.bash'
+# Everything we manage lives in ONE guarded block. Writing it once (instead of
+# appending line-by-line on every run) is what prevents duplicated PATH/alias
+# lines. PATH entries dedupe themselves at runtime via the case-glob guards.
+if ! grep -q '# >>> wsl-arch-bootstrap >>>' "$PROFILE"; then
+  {
+    printf '\n# >>> wsl-arch-bootstrap >>>\n'
+    printf 'export EDITOR=%s\n' "$DEFAULT_EDITOR"
+    printf 'export VISUAL=%s\n' "$DEFAULT_EDITOR"
+    cat <<'EOF'
+# --- PATH (self-deduping) ---
+case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac
+# user-installed ruby gems
+for _d in "$HOME"/.local/share/gem/ruby/*/bin; do
+  [ -d "$_d" ] && case ":$PATH:" in *":$_d:"*) ;; *) PATH="$_d:$PATH" ;; esac
+done; export PATH; unset _d
+
+# --- history ---
+export HISTSIZE=100000 HISTFILESIZE=200000
+export HISTCONTROL=ignoreboth:erasedups
+export HISTTIMEFORMAT='%F %T '
+shopt -s histappend checkwinsize
+PROMPT_COMMAND="history -a; ${PROMPT_COMMAND:-}"
+
+# --- aliases ---
+if command -v eza >/dev/null 2>&1; then
+  alias ls='eza --group-directories-first'
+  alias ll='eza -alh --group-directories-first --git'
+  alias la='eza -a --group-directories-first'
+else
+  alias ll='ls -alh --color=auto'
+fi
+command -v bat >/dev/null 2>&1 && alias cat='bat --paging=never'
+# IS_SANDBOX=1 lets --dangerously-skip-permissions run as root (disposable WSL
+# sandbox); without it Claude Code refuses for security reasons.
+alias claude-yolo='IS_SANDBOX=1 claude --dangerously-skip-permissions'
+
+# --- tool init ---
+command -v starship >/dev/null 2>&1 && eval "$(starship init bash)"
+command -v zoxide   >/dev/null 2>&1 && eval "$(zoxide init bash)"
+[ -f /usr/share/fzf/key-bindings.bash ] && . /usr/share/fzf/key-bindings.bash
+[ -f /usr/share/fzf/completion.bash ]   && . /usr/share/fzf/completion.bash
+# <<< wsl-arch-bootstrap <<<
+EOF
+  } >> "$PROFILE"
+fi
+
+# Ensure login shells (WSL default) actually source .bashrc.
+BP="$HOME/.bash_profile"
+if [[ ! -f "$BP" ]] || ! grep -q 'bashrc' "$BP"; then
+  printf '%s\n' '[ -f ~/.bashrc ] && . ~/.bashrc' >> "$BP"
+fi
 
 # ── 4. git config ────────────────────────────────────────────────────────────
 log "Configuring git..."
@@ -87,8 +152,8 @@ if [[ "$SKIP_CLAUDE" != "1" ]]; then
       $SUDO npm install -g @anthropic-ai/claude-code
     fi
   fi
-  # Ensure the install dir is on PATH for future shells
-  add_line 'export PATH="$HOME/.local/bin:$PATH"'
+  # Future shells get ~/.local/bin via the guarded block in section 3;
+  # just make claude reachable for the rest of THIS script run.
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
