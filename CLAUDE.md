@@ -8,8 +8,12 @@ host filesystem (`/mnt/c`) destructively.
 ## Operating assumptions
 - You are running as **root**. `sudo` is unnecessary (and may be absent).
 - Package manager is **pacman**. Use `pacman -S --needed --noconfirm <pkg>`.
-- AUR is *not* set up by default. If something is AUR-only, install `yay` first
-  (clone from aur.archlinux.org and `makepkg -si`) and say so before doing it.
+- **AUR is off-limits.** `makepkg` refuses to run as root, and this box stays
+  root-only (no build user), so AUR-only packages can't be built without
+  breaking the no-extra-users rule. If a request is AUR-only (e.g. PowerShell,
+  ruby-install), say so and stop — don't create a build user or install `yay`.
+  Prefer an official-repo equivalent (e.g. official `ruby` instead of
+  `ruby-install`).
 - Network logins (OAuth) may need a URL copied to a browser on the Windows host.
 
 ## Preferences
