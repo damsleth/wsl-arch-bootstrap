@@ -9,6 +9,8 @@ Claude Code dev box in one command.
 | `bootstrap.sh` | Idempotent provisioning: pacman sync/upgrade, core tools, Node, Claude Code, shell + git config. Run this first. |
 | `CLAUDE.md` | Dropped into `~/.claude/` so the in-WSL Claude knows the environment, constraints, and your preferences. |
 | `kickoff-prompt.md` | Paste into a `claude` session to have the agent finish the "nice setup". |
+| `snapshot.ps1` | Windows-host PowerShell: export the provisioned distro to a timestamped `.tar`. |
+| `restore.ps1` | Windows-host PowerShell: recreate a distro from a snapshot (`-Force` to replace an existing one). |
 
 ## Quick start (inside the Arch WSL distro, as root)
 
@@ -24,25 +26,40 @@ claude                       # sign in on first run
 # then paste the contents of kickoff-prompt.md into the session
 ```
 
-## Re-provisioning a brand-new distro from Windows (optional)
+## Snapshot & restore from Windows (the warm-start path)
 
-If you want to nuke and recreate the *whole distro* from PowerShell on the host:
+The script is the source of truth; a snapshot is just a warm cache so you don't
+recompile rust/etc. every time. Workflow:
 
 ```powershell
-# list distros
-wsl --list --verbose
+# 1. once the box is dialed in, snapshot it (timestamped .tar in C:\wsl\snapshots)
+.\snapshot.ps1
 
-# export a known-good snapshot once (backup)
+# 2. later, spin up a fresh copy from that snapshot
+.\restore.ps1 -Tar C:\wsl\snapshots\archlinux-YYYYMMDD-HHMMSS.tar
+
+# replace the live distro in place (DESTRUCTIVE — unregisters it first):
+.\restore.ps1 -Tar ...\archlinux-....tar -Force
+
+# or restore alongside under a different name (safe, no -Force needed):
+.\restore.ps1 -Tar ...\archlinux-....tar -Distro arch-test -InstallDir C:\wsl\arch-test
+```
+
+Both scripts take `-Distro` (default `archlinux`) — check yours with
+`wsl --list --verbose` if the name differs. Running PowerShell as admin isn't
+required for import/export.
+
+If a snapshot ever feels stale, `git pull` the kit inside the restored distro
+and re-run `bootstrap.sh` over it (idempotent), then `snapshot.ps1` again.
+
+### Raw commands (no scripts)
+
+```powershell
 wsl --export archlinux C:\wsl\arch-backup.tar
-
-# later: wipe and restore
-wsl --unregister archlinux
+wsl --shutdown; wsl --unregister archlinux
 wsl --import archlinux C:\wsl\arch C:\wsl\arch-backup.tar
 wsl -d archlinux
 ```
-
-Then re-run `bootstrap.sh` inside the fresh distro. Because every step is
-idempotent, running it on a restored snapshot is harmless too.
 
 ## Customizing
 
