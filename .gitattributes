@@ -1,0 +1,7 @@
+# Keep shell scripts LF even when checked out on Windows — they run under WSL
+# bash off /mnt/c, and CRLF breaks the shebang ("bad interpreter: ...^M").
+* text=auto eol=lf
+*.sh text eol=lf
+
+# PowerShell scripts run on the Windows host; CRLF is the native convention.
+*.ps1 text eol=crlf
