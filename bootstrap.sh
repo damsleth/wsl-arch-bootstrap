@@ -32,6 +32,10 @@ log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
 
 # ── 0. sanity ────────────────────────────────────────────────────────────────
+if [[ -z $GIT_NAME || -z $GIT_EMAIL ]]; then
+  printf 'ERROR: GIT_NAME and GIT_EMAIL must be set, e.g.:\n  GIT_NAME="Your Name" GIT_EMAIL="you@example.com" bash bootstrap.sh\n' >&2
+  exit 1
+fi
 if [[ $EUID -ne 0 ]]; then
   warn "Not running as root. This kit assumes root-mode WSL; sudo will be used where present."
   SUDO="sudo"
